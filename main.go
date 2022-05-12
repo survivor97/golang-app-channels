@@ -4,28 +4,67 @@ import (
 	"bufio"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
-	var FILE_NAME = "data.txt"
+
+	const FILE_NAME = "data.txt"
+	const MAX_BUFFER = 128*1024
+	const SLICE_VALUE = 50
 
 	//GET LENGTHS
-	nrOfLines, nrOfElements := getDataLengths(FILE_NAME, 128*1024)
+	nrOfLines, nrOfElements := getDataLengths(FILE_NAME, MAX_BUFFER)
 	fmt.Printf("Nr of lines: {%d}; Nr of elements: {%d}\n", nrOfLines, nrOfElements)
 
-	//READ DATA INTO AN ARRAY
+	//GET DATA INTO AN ARRAY
 	//Init slice
 	dataMatrix := make([][]float64, nrOfLines, 128*1024)
 	for i := range dataMatrix {
 		dataMatrix[i] = make([]float64, nrOfElements)
 	}
 
-	getDataIntoSlice(dataMatrix, nrOfLines, nrOfElements, FILE_NAME, 128*1024)
+	getDataIntoSlice(dataMatrix, nrOfLines, nrOfElements, FILE_NAME, MAX_BUFFER)
 
-	fmt.Println(dataMatrix[99][0]);
+	//No channels=========================================================
+	start := time.Now()
+	sumOfSquaresValue := sumOfSquares(dataMatrix, 0, nrOfLines, nrOfElements)
+	fmt.Printf("Sum of squares: {%f}\n", sumOfSquaresValue)
+	defer finishProfiler(start)
+	//====================================================================
+
+	//Multiple channels ==================================================
+	//myChannels := make(chan float64)
+	//start := time.Now()
+	//distributeProcesses(dataMatrix, SLICE_VALUE, myChannels, nrOfElements)
+	//defer finishProfiler(start)
+	//
+	////Retrieve values
+	//var resultsPerLine = make([]float64, nrOfLines)
+	//
+	//for i:=0; i<SLICE_VALUE; i++ {
+	//	resultsPerLine[i] = <- myChannels
+	//
+	//	//Debug Log -> sum for each line:
+	//	fmt.Printf("Value of line {%d}: %f \n", i, resultsPerLine[i])
+	//}
+	////Debug Log -> Total Sum
+	//var totalSum float64 = 0;
+	//
+	//for i := 0; i< len(resultsPerLine); i++ {
+	//	totalSum += resultsPerLine[i];
+	//}
+	//fmt.Printf("Total Sum: %f \n" , totalSum)
+	//====================================================================
+}
+
+func finishProfiler(start time.Time)  {
+	elapsed := time.Since(start)
+	log.Printf("Execution took %d", elapsed.Nanoseconds())
 }
 
 func getDataIntoSlice(dataMx [][]float64, nrOfLines int, nrOfElements int, fileName string, maxBufferRead int) {
@@ -90,4 +129,37 @@ func getDataLengths(fileName string, maxBufferRead int) (int, int) {
 	}
 
 	return lineCounter, indexCounter
+}
+
+func sumOfSquares(dataMx [][]float64, startLine int, endLine int, nrOfElements int) (float64) {
+	var sum float64 = 0
+	for i := startLine; i < endLine; i++ {
+		for j := 0; j < nrOfElements; j++ {
+			sum += math.Sqrt(dataMx[i][j]);
+		}
+	}
+	return sum
+}
+
+func distributeProcesses(dataMx [][]float64, sliceValue int, channel chan float64, nrOfElements int) {
+
+	//sliceValue == number of processes
+	modulo := len(dataMx) % sliceValue
+	fmt.Printf("Numbers Array Length: {%d}; Slice Value: {%d}; Modulo: {%d} \n", len(dataMx), sliceValue, modulo)
+
+	if modulo != 0 {
+		fmt.Printf("Error - Array Length can't be sliced equally. Aborting...\n")
+		return
+	}
+
+	for i:=0; i<sliceValue; i++ {
+		go channelSumOfSquares(dataMx, channel, sliceValue, nrOfElements, i);
+	}
+}
+
+func channelSumOfSquares(dataMx [][]float64, channel chan float64, sliceValue int, nrOfElements int, indexOfPortion int) {
+
+	chunkSize := len(dataMx) / sliceValue;
+	sum := sumOfSquares(dataMx, indexOfPortion * chunkSize, indexOfPortion * chunkSize + chunkSize, nrOfElements)
+	channel <- sum
 }
